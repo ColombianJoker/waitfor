@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <sys/stat.h>
 
 #define DEFAULT_INTERVAL_SECONDS 2
 #define MAX_USERNAME_LEN 32
@@ -22,7 +23,8 @@ typedef enum {
     CONDITION_NONE,
     CONDITION_PROCESS,
     CONDITION_TCP_PORT,
-    CONDITION_UDP_PORT
+    CONDITION_UDP_PORT,
+    CONDITION_FILE
 } ConditionType;
 
 // --- Function Prototypes ---
@@ -31,14 +33,16 @@ struct kinfo_proc *get_process_info(size_t *num_processes);
 int check_for_matching_process(const char *process_name, uid_t target_uid, int any_user);
 int check_for_tcp_port(int port);
 int check_for_udp_port(int port);
+int check_for_file_existence(const char *file_path);
 int wait_for_process_start(const char *command_name, uid_t target_uid, int any_user, long interval);
 int wait_for_process_termination(const char *command_name, uid_t target_uid, int any_user, long interval);
 int wait_for_port_condition(int port, int (*check_func)(int), long interval);
+int wait_for_file_condition(const char *file_path, long interval);
 
 
 // Function to display syntax help
 void display_help(const char *prog_name) {
-    fprintf(stderr, "Usage: %s [ -v ] [ -w ] [ -i SECONDS ] [ -C COMMAND_NAME [ -a | -u USER ] | -T TCP_PORT | -U UDP_PORT ]\n", prog_name);
+    fprintf(stderr, "Usage: %s [ -v ] [ -w ] [ -i SECONDS ] [ -C COMMAND_NAME [ -a | -u USER ] | -T TCP_PORT | -U UDP_PORT | -F FILE ]\n", prog_name);
     fprintf(stderr, "       %s -h\n", prog_name);
     fprintf(stderr, "\n");
     fprintf(stderr, "Monitors for the termination of a condition.\n");
@@ -58,6 +62,7 @@ void display_help(const char *prog_name) {
     fprintf(stderr, "  -a           With -C, consider processes for any user in the system.\n");
     fprintf(stderr, "  -T TCP_PORT  Waits for a TCP port to open, then close.\n");
     fprintf(stderr, "  -U UDP_PORT  Waits for a UDP port to open, then close.\n");
+    fprintf(stderr, "  -F FILE      Waits for a file to exist, then not exist.\n");
     fprintf(stderr, "  -h           Show this syntax help.\n");
     fprintf(stderr, "\n");
 }
@@ -178,6 +183,15 @@ int check_for_udp_port(int port) {
     }
 }
 
+// Checks if a file exists.
+// Returns 1 if it exists, 0 if it doesn't.
+int check_for_file_existence(const char *file_path) {
+    if (access(file_path, F_OK) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
 // Function to wait for the process to appear
 int wait_for_process_start(const char *command_name, uid_t target_uid, int any_user, long interval) {
     if (verbose) {
@@ -250,6 +264,35 @@ int wait_for_port_condition(int port, int (*check_func)(int), long interval) {
     return EXIT_SUCCESS;
 }
 
+// Generic function to handle file waiting conditions
+int wait_for_file_condition(const char *file_path, long interval) {
+    int file_exists = check_for_file_existence(file_path);
+
+    if (!wait_for_start_flag) {
+        if (file_exists == 0) {
+            if (verbose) fprintf(stderr, "File '%s' does not exist. Exiting.\n", file_path);
+            return EXIT_SUCCESS;
+        }
+        if (verbose) fprintf(stderr, "File '%s' exists. Waiting for it to be removed...\n", file_path);
+    } else { // wait_for_start is true
+        if (verbose) fprintf(stderr, "Waiting for file '%s' to appear...\n", file_path);
+        while (file_exists == 0) {
+            sleep(interval);
+            file_exists = check_for_file_existence(file_path);
+        }
+        if (verbose) fprintf(stderr, "File '%s' exists. Now waiting for it to be removed...\n", file_path);
+    }
+
+    // Now, wait for the file to be removed
+    while (file_exists == 1) {
+        sleep(interval);
+        file_exists = check_for_file_existence(file_path);
+    }
+
+    if (verbose) printf("File '%s' has been removed.\n", file_path);
+    return EXIT_SUCCESS;
+}
+
 
 int main(int argc, char *argv[]) {
     long interval_seconds = DEFAULT_INTERVAL_SECONDS;
@@ -258,10 +301,11 @@ int main(int argc, char *argv[]) {
     char *command_name_arg = NULL;
     int tcp_port_arg = 0;
     int udp_port_arg = 0;
+    char *file_path_arg = NULL;
     ConditionType condition_to_wait_for = CONDITION_NONE;
     int opt;
     
-    while ((opt = getopt(argc, argv, "i:u:C:T:U:ahvw")) != -1) {
+    while ((opt = getopt(argc, argv, "i:u:C:T:U:F:ahvw")) != -1) {
         switch (opt) {
             case 'i':
                 interval_seconds = atol(optarg);
@@ -325,6 +369,15 @@ int main(int argc, char *argv[]) {
                 udp_port_arg = atoi(optarg);
                 condition_to_wait_for = CONDITION_UDP_PORT;
                 break;
+            case 'F':
+                if (condition_to_wait_for != CONDITION_NONE) {
+                    fprintf(stderr, "Error: Cannot use -F with other condition options.\n");
+                    display_help(argv[0]);
+                    return EXIT_FAILURE;
+                }
+                file_path_arg = optarg;
+                condition_to_wait_for = CONDITION_FILE;
+                break;
             case 'v':
                 verbose = 1;
                 break;
@@ -343,7 +396,7 @@ int main(int argc, char *argv[]) {
     }
     
     if (condition_to_wait_for == CONDITION_NONE) {
-        fprintf(stderr, "Error: One of -C, -T, or -U must be specified.\n");
+        fprintf(stderr, "Error: One of -C, -T, -U, or -F must be specified.\n");
         display_help(argv[0]);
         return EXIT_FAILURE;
     }
@@ -370,6 +423,9 @@ int main(int argc, char *argv[]) {
             
         case CONDITION_UDP_PORT:
             return wait_for_port_condition(udp_port_arg, check_for_udp_port, interval_seconds);
+            
+        case CONDITION_FILE:
+            return wait_for_file_condition(file_path_arg, interval_seconds);
             
         default:
             return EXIT_FAILURE;
