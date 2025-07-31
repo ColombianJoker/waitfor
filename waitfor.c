@@ -42,7 +42,7 @@ int wait_for_file_condition(const char *file_path, long interval);
 
 // Function to display syntax help
 void display_help(const char *prog_name) {
-    fprintf(stderr, "Usage: %s [ -v ] [ -w ] [ -i SECONDS ] [ -C COMMAND_NAME [ -a | -u USER ] | -T TCP_PORT | -U UDP_PORT | -F FILE ]\n", prog_name);
+    fprintf(stderr, "Usage: %s [ -v ] [ -w ] [ -i SECONDS ] [ -P PROCESS_NAME [ -a | -u USER ] | -T TCP_PORT | -U UDP_PORT | -F FILE ]\n", prog_name);
     fprintf(stderr, "       %s -h\n", prog_name);
     fprintf(stderr, "\n");
     fprintf(stderr, "Monitors for the termination of a condition.\n");
@@ -54,16 +54,16 @@ void display_help(const char *prog_name) {
     fprintf(stderr, "    then waits for it to become false.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "Options:\n");
-    fprintf(stderr, "  -v           Enable verbose output messages.\n");
-    fprintf(stderr, "  -w           Wait for the condition to start before waiting for it to end.\n");
-    fprintf(stderr, "  -i SECONDS   Interval in seconds to recheck. Default is %d.\n", DEFAULT_INTERVAL_SECONDS);
-    fprintf(stderr, "  -C COMMAND_NAME Only considers processes that have COMMAND_NAME.\n");
-    fprintf(stderr, "  -u USER      With -C, only consider processes owned by USER. Defaults to current user if -a is not used.\n");
-    fprintf(stderr, "  -a           With -C, consider processes for any user in the system.\n");
-    fprintf(stderr, "  -T TCP_PORT  Waits for a TCP port to open, then close.\n");
-    fprintf(stderr, "  -U UDP_PORT  Waits for a UDP port to open, then close.\n");
-    fprintf(stderr, "  -F FILE      Waits for a file to exist, then not exist.\n");
-    fprintf(stderr, "  -h           Show this syntax help.\n");
+    fprintf(stderr, "  -v               Enable verbose output messages.\n");
+    fprintf(stderr, "  -w               Wait for the condition to start before waiting for it to end.\n");
+    fprintf(stderr, "  -i SECONDS       Interval in seconds to recheck. Default is %d.\n", DEFAULT_INTERVAL_SECONDS);
+    fprintf(stderr, "  -P PROCESS_NAME  Only considers processes that have COMMAND_NAME.\n");
+    fprintf(stderr, "  -u USER          With -C, only consider processes owned by USER. Defaults to current user if -a is not used.\n");
+    fprintf(stderr, "  -a               With -C, consider processes for any user in the system.\n");
+    fprintf(stderr, "  -T TCP_PORT      Waits for a TCP port to open, then close.\n");
+    fprintf(stderr, "  -U UDP_PORT      Waits for a UDP port to open, then close.\n");
+    fprintf(stderr, "  -F FILE          Waits for a file to exist, then not exist.\n");
+    fprintf(stderr, "  -h               Show this syntax help.\n");
     fprintf(stderr, "\n");
 }
 
@@ -305,7 +305,7 @@ int main(int argc, char *argv[]) {
     ConditionType condition_to_wait_for = CONDITION_NONE;
     int opt;
     
-    while ((opt = getopt(argc, argv, "i:u:C:T:U:F:ahvw")) != -1) {
+    while ((opt = getopt(argc, argv, "i:u:P:T:U:F:ahvw")) != -1) {
         switch (opt) {
             case 'i':
                 interval_seconds = atol(optarg);
@@ -322,7 +322,7 @@ int main(int argc, char *argv[]) {
                     return EXIT_FAILURE;
                 }
                 if (condition_to_wait_for != CONDITION_PROCESS && condition_to_wait_for != CONDITION_NONE) {
-                    fprintf(stderr, "Error: -u can only be used with -C.\n");
+                    fprintf(stderr, "Error: -u can only be used with -P.\n");
                     display_help(argv[0]);
                     return EXIT_FAILURE;
                 }
@@ -342,9 +342,9 @@ int main(int argc, char *argv[]) {
                 }
                 any_user = 1;
                 break;
-            case 'C':
+            case 'P':
                 if (condition_to_wait_for != CONDITION_NONE) {
-                    fprintf(stderr, "Error: Cannot use -C with other condition options.\n");
+                    fprintf(stderr, "Error: Cannot use -P with other condition options.\n");
                     display_help(argv[0]);
                     return EXIT_FAILURE;
                 }
@@ -396,7 +396,7 @@ int main(int argc, char *argv[]) {
     }
     
     if (condition_to_wait_for == CONDITION_NONE) {
-        fprintf(stderr, "Error: One of -C, -T, -U, or -F must be specified.\n");
+        fprintf(stderr, "Error: One of -P, -T, -U, or -F must be specified.\n");
         display_help(argv[0]);
         return EXIT_FAILURE;
     }
